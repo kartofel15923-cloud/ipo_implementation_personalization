@@ -1,0 +1,1176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Procedural block map</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden;
+         /* background gradient: current blue at the top, lighter cyan blue at the bottom */
+         --bg-top: #45a0d9; --bg-bottom: #4db6d8;
+         background: linear-gradient(to bottom, var(--bg-top), var(--bg-bottom)) fixed; font-family: system-ui, sans-serif; color: #e8eef8; }
+  canvas { display: block; }
+  #uiLeft { position: fixed; top: 12px; left: 12px; display: flex; gap: 8px; align-items: flex-start; }
+  #legendPanel, #customMenu { padding: 12px; border-radius: 8px; background: rgba(14, 26, 48, .78); backdrop-filter: blur(6px); font-size: 13px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .12); }
+  #legend { display: grid; gap: 5px; }
+  #legend div { display: flex; align-items: center; gap: 8px; }
+  #legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; box-shadow: 0 0 0 1px rgba(255, 255, 255, .5); }
+  #customBtn { width: 100%; margin-top: 10px; padding: 7px 10px; border: 0; border-radius: 6px; background: #34507f; color: #fff; font: inherit;
+               cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 7px; }
+  #customBtn:hover, #customBtn[aria-expanded="true"] { background: #4f86d6; }
+  #customBtn svg { width: 15px; height: 15px; }
+  #handBtn { width: 100%; margin-top: 8px; padding: 7px 10px; border: 0; border-radius: 6px; background: #34507f; color: #fff; font: inherit;
+             cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 7px; }
+  #handBtn:hover, #handBtn[aria-pressed="true"] { background: #4f86d6; }
+  #handBtn svg { width: 15px; height: 15px; }
+  #handPanel { position: fixed; left: 50%; top: 50%; transform: translate(-50%, calc(-50% + 16px)); padding: 28px 32px 32px; border-radius: 16px; background: rgba(14, 26, 48, .78);
+               backdrop-filter: blur(6px); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .12); text-align: center; opacity: 0; pointer-events: none;
+               transition: opacity .35s, transform .35s; max-width: calc(100vw - 24px); box-sizing: border-box; }
+  #handPanel.show { opacity: 1; transform: translate(-50%, -50%); pointer-events: auto; }
+  #handPanel .handTitle { margin-bottom: 22px; font-size: 28px; font-weight: 700; }
+  #handChoices { display: flex; gap: 18px; justify-content: center; }
+  .handChoice { width: clamp(80px, 16vw, 190px); height: clamp(80px, 16vw, 190px); padding: 14px; border: 3px solid transparent; border-radius: 16px; background: #1a2d4f; cursor: pointer; display: grid; place-items: center; }
+  .handChoice:hover { background: #223a66; }
+  .handChoice[aria-checked="true"] { border-color: #7fb0ff; background: #2b4a82; box-shadow: 0 0 0 2px rgba(127, 176, 255, .35); }
+  .handChoice img { max-width: 100%; max-height: 100%; object-fit: contain; pointer-events: none; }
+  @media (max-width: 600px) { #handPanel { padding: 18px 14px 20px; } #handPanel .handTitle { font-size: 22px; margin-bottom: 14px; } #handChoices { gap: 8px; } .handChoice { padding: 8px; } }
+  #viewBtn:disabled { opacity: .4; cursor: not-allowed; filter: grayscale(.6); }
+  #viewBtn:disabled:hover { background: rgba(14, 26, 48, .78); }
+  #customMenu { width: 250px; max-height: calc(100vh - 24px); overflow-y: auto; box-sizing: border-box; }
+  #customMenu[hidden] { display: none; }
+  #customMenu .menuHead { display: flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: 14px; }
+  #customMenu .menuHead button { border: 0; background: none; color: inherit; font-size: 20px; line-height: 1; cursor: pointer; opacity: .7; padding: 0 2px; }
+  #customMenu .menuHead button:hover { opacity: 1; }
+  #customMenu .menuTitle { margin-top: 10px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; opacity: .65; }
+  .preset { display: block; width: 100%; text-align: left; margin-top: 8px; padding: 8px 10px; border: 2px solid transparent; border-radius: 8px;
+            background: #1a2d4f; color: inherit; font: inherit; cursor: pointer; }
+  .preset:hover { background: #21386290; }
+  .preset.active { border-color: #7fb0ff; background: #223a66; }
+  .preset b { display: block; margin-bottom: 7px; }
+  .toggle { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: #1a2d4f; cursor: pointer; }
+  .toggle input { width: 16px; height: 16px; margin: 0; accent-color: #7fb0ff; cursor: pointer; }
+  .swatches { display: flex; gap: 3px; }
+  .swatches i { flex: 1; height: 12px; border-radius: 3px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .4); }
+  #viewBtn { position: fixed; top: 12px; right: 12px; padding: 9px 16px; border: 0; border-radius: 8px; background: rgba(14, 26, 48, .78); backdrop-filter: blur(6px);
+             color: #e8eef8; font-size: 13px; font-family: inherit; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+  #viewBtn:hover { background: rgba(31, 52, 92, .9); }
+  #viewBtn svg { width: 16px; height: 16px; }
+  #arrowBtn { position: fixed; bottom: 12px; right: 12px; padding: 9px 16px; border: 0; border-radius: 8px; background: rgba(14, 26, 48, .78); backdrop-filter: blur(6px);
+              color: #e8eef8; font-size: 13px; font-family: inherit; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+  #arrowBtn:hover { background: rgba(31, 52, 92, .9); }
+  #arrowBtn svg { width: 16px; height: 16px; }
+  #help { position: fixed; bottom: 10px; left: 12px; font-size: 12px; opacity: .65; }
+  #toast { position: fixed; bottom: 36px; left: 12px; padding: 7px 11px; border-radius: 6px; background: rgba(14, 26, 48, .85); font-size: 12px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  #toast.show { opacity: 1; }
+  body.ui-hidden #uiLeft, body.ui-hidden #viewBtn, body.ui-hidden #arrowBtn, body.ui-hidden #help, body.ui-hidden #toast, body.ui-hidden #handPanel { display: none; }
+  #msg { position: fixed; inset: 0; display: grid; place-items: center; font-size: 15px; pointer-events: none; }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="uiLeft">
+  <div id="legendPanel">
+    <div id="legend"></div>
+    <button id="customBtn" aria-expanded="false" aria-controls="customMenu">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>
+      Customize
+    </button>
+    <button id="handBtn" aria-pressed="false" title="Turn the camera around to look at the empty background (press again to go back)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 11a2 2 0 0 1 4 0v3a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.9-5.9-2.4L3.4 16a2 2 0 0 1 3.2-2.4L8 15"/></svg>
+      Hand type
+    </button>
+  </div>
+  <div id="customMenu" hidden>
+    <div class="menuHead"><span>Customize</span><button id="menuClose" aria-label="Close menu">&times;</button></div>
+    <div class="menuTitle">Color presets</div>
+    <div id="presetList"></div>
+    <div class="menuTitle">Arrow</div>
+    <label class="toggle"><input type="checkbox" id="arrowToggle"> Show arrow</label>
+  </div>
+</div>
+<button id="viewBtn" title="Switch between the angled view and the top-down view (V)">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="m3 13 9 5 9-5"/></svg>
+  Switch view
+</button>
+<button id="arrowBtn" title="Slide the view to the arrow (G)">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2.5"/><path d="M12 1v4M12 19v4M1 12h4M19 12h4"/></svg>
+  Go to arrow
+</button>
+<div id="help">Drag, scroll or ← → / A D: move east–west · V: switch view · G: go to arrow · K: copy view angle · H: hide UI</div>
+<div id="handPanel" aria-hidden="true">
+  <div class="handTitle" id="handTitle">Choose your hand</div>
+  <div id="handChoices" role="radiogroup" aria-labelledby="handTitle"></div>
+</div>
+<div id="toast"></div>
+<div id="msg">Loading models…</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+import { toCreasedNormals, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+
+/* ------------------------------------------------------------------ *
+ *  External models: <name>.fbx files located next to this HTML file
+ *  (room.fbx, hall.fbx, ele.fbx, t_shape.fbx, cross.fbx).
+ * ------------------------------------------------------------------ */
+const MODEL_DIR = '';   // '' = same folder as this HTML file; e.g. 'models/' for a sub-folder
+const modelBuffers = {};   // type -> ArrayBuffer
+
+/* Room icons (white PNGs next to this HTML file), shown on top of the rooms in BOTH views: standing on the roof and facing the camera in the angled view, lying flat in the top view.
+ * room_type -> file. The white start room has no icon. */
+const ICON_DIR = '';      // '' = same folder as this HTML file
+const ICON_FILES = { green: 'safe_room.png', yellow: 'shop.png', orange: 'sign_puzzle.png', purple: 'teacher.png', red: 'boss.png' };
+const ICON_SIZE = 0.58;   // icon width as a fraction of the room's width (the red room is scaled, so its icon scales too)
+const BADGE_SIZE = 1.3;   // angled view: diameter of the round badge behind each icon, as a multiple of the icon's size (0 = no badge)
+const BADGE_RING = 0.045; // thickness of the badge's dark outline, as a fraction of the icon's size
+const ICON_SHADOW = 0.5;  // opacity of the dark drop shadow that keeps the white icon readable on light rooms
+const iconUrls = {};      // room_type -> url (filled by default, or by the manual file picker)
+
+
+/* ------------------------------------------------------------------ *
+ *  Piece definitions (measured from the FBX files, world units).
+ *  conn: opening centre (x,z) relative to the model origin + outward dir.
+ *  rects: footprint boxes [x0,z0,x1,z1] used for collision tests.
+ * ------------------------------------------------------------------ */
+const DEFS = {
+  room:    { room: true, weight: 6,
+             conns: [[ 42.3,0,1,0],[-42.3,0,-1,0],[0,42.3,0,1],[0,-42.3,0,-1]],
+             rects: [[-42.3,-42.3,42.3,42.3]] },
+  hall:    { weight: 5,
+             conns: [[0,59.6,0,1],[0,-55.3,0,-1]],
+             rects: [[-21,-55.3,21,59.6]] },
+  ele:     { weight: 3,
+             conns: [[69,14.41,1,0],[-26.74,-56.6,0,-1]],
+             rects: [[-45.9,-6.6,69,35.4],[-45.9,-56.6,-7.5,35.4]] },
+  t_shape: { weight: 1.8,
+             conns: [[-74.5,-13.67,-1,0],[79.4,-13.67,1,0],[1.7,66,0,1]],
+             rects: [[-74.5,-37.1,79.4,9.7],[-19.3,9.7,22.7,66]] },
+  cross:   { weight: 0.8,
+             conns: [[-74.8,1.74,-1,0],[79,1.74,1,0],[1.35,-76.3,0,-1],[1.35,81.4,0,1]],
+             rects: [[-74.8,-21.7,79,25.2],[-19.7,-76.3,22.3,81.4]] },
+};
+const TYPES = Object.keys(DEFS);
+const GAP = 7;            // blocks never touch: this much empty space between connected openings
+const MARGIN = 2;         // extra clearance for collision tests
+const CREASE_ANGLE = Math.PI / 6;   // edges sharper than 30° stay hard
+const ROOM_TYPES = ['yellow', 'purple', 'green', 'orange'];   // random rooms in between; white (start) and red (end) are fixed
+const MAX_HALL_RUN = 2;   // never more than this many halls connected in a row
+const START_CLEAR = 100;  // radius (from the white room's walls) kept free of every piece except the first hall
+const TIP_ROOM_CHANCE = 1;   // after the map is done: chance that a free t_shape / cross tip gets a room
+const BAND = 330;         // max sideways drift from the main direction
+
+/* ------------------------------------------------------------------ *
+ *  Helpers
+ * ------------------------------------------------------------------ */
+function mulberry32(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a);
+  t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+// rotate (x,z) by k quarter turns, matching three.js rotation.y = k*PI/2
+function rot(x, z, k) { switch (((k % 4) + 4) % 4) { case 0: return [x, z]; case 1: return [z, -x]; case 2: return [-x, -z]; default: return [-z, x]; } }
+function worldRects(def, k, px, pz) {
+  return def.rects.map(([x0, z0, x1, z1]) => {
+    const a = rot(x0, z0, k), b = rot(x1, z1, k);
+    return [Math.min(a[0], b[0]) + px, Math.min(a[1], b[1]) + pz, Math.max(a[0], b[0]) + px, Math.max(a[1], b[1]) + pz];
+  });
+}
+function overlap(a, b, m) { return a[0] < b[2] + m && a[2] > b[0] - m && a[1] < b[3] + m && a[3] > b[1] - m; }
+function rectDist(a, b) { return Math.hypot(Math.max(a[0] - b[2], b[0] - a[2], 0), Math.max(a[1] - b[3], b[1] - a[3], 0)); }
+function pick(rng, items, w) { let t = rng() * w.reduce((s, v) => s + v, 0); for (let i = 0; i < items.length; i++) { t -= w[i]; if (t <= 0) return items[i]; } return items[items.length - 1]; }
+
+/* ------------------------------------------------------------------ *
+ *  Procedural generator
+ * ------------------------------------------------------------------ */
+function scaleDef(def, f) {
+  return { ...def, conns: def.conns.map(([x, z, dx, dz]) => [x * f, z * f, dx, dz]),
+                   rects: def.rects.map(r => r.map(v => v * f)) };
+}
+const END_SCALE = 1.5;                         // the final red room is 1.5x a standard room
+const END_DEF = scaleDef(DEFS.room, END_SCALE);
+const lerp = (a, b, t) => a + (b - a) * t;
+
+/* seed, count (total pieces incl. start + end room), direction angle, straightening 0..1.
+ * The map always starts with a white room and ends with a (1.5x) red room.
+ * straightening: 0 = free branching, 1 = one linear path with little sideways spreading. */
+function generate(seed, count, angleDeg, straightening = 0.5) {
+  const rng = mulberry32(seed);
+  const S = Math.min(1, Math.max(0, straightening));
+  const a = angleDeg * Math.PI / 180;
+  const D = [Math.cos(a), -Math.sin(a)];                 // general direction on the (x,z) plane
+  const along = (x, z) => x * D[0] + z * D[1];
+  const side  = (x, z) => x * D[1] * -1 + z * D[0] * 1;  // signed sideways distance
+  const band = BAND * lerp(1, 0.3, S);
+  const backLimit = lerp(-120, 0, S);                    // straighter = nothing grows behind the start room                   // straighter map = narrower corridor of allowed drift
+  const placed = [];
+  const open = [];                                       // frontier connectors
+
+  function add(type, k, px, pz, usedIdx, parent, opts = {}) {
+    const def = opts.def || DEFS[type];
+    const piece = { type, k, x: px, z: pz, scale: opts.scale || 1, rects: worldRects(def, k, px, pz), parent };
+    Object.defineProperty(piece, 'fromConn', { value: opts.conn, enumerable: false });   // the frontier connector it was attached to (for backtracking)
+    if (def.room) piece.room_type = opts.room_type || ROOM_TYPES[Math.floor(rng() * ROOM_TYPES.length)];
+    if (opts.conn) opts.conn.used = true;                // the connector this piece was attached to is now taken
+    const tips = [];
+    def.conns.forEach(([cx, cz, dx, dz], i) => {
+      const [rx, rz] = rot(cx, cz, k), [rdx, rdz] = rot(dx, dz, k);
+      const tip = { piece, x: rx + px, z: rz + pz, dx: rdx, dz: rdz, fails: 0, used: i === usedIdx };
+      tips.push(tip);
+      if (i !== usedIdx) open.push(tip);
+    });
+    Object.defineProperty(piece, 'tips', { value: tips, enumerable: false });
+    placed.push(piece);
+    return piece;
+  }
+  const quarterTurn = (dx, dz, want) => { for (let k = 0; k < 4; k++) { const [rdx, rdz] = rot(dx, dz, k); if (rdx === -want[0] && rdz === -want[1]) return k; } return -1; };
+  // nothing (except the fixed first hall, which is added directly) may come within START_CLEAR of the white start room
+  const tooCloseToStart = rects => rects.some(r => placed[0].rects.some(s => rectDist(r, s) < START_CLEAR));
+  const collides = (rects, parent) => tooCloseToStart(rects) || placed.some(p => p !== parent && p.rects.some(r1 => rects.some(r2 => overlap(r1, r2, MARGIN))));
+  // how many halls are chained directly behind this piece (the piece itself included)
+  const hallRun = piece => { let n = 0; for (let p = piece; p && p.type === 'hall'; p = p.parent) n++; return n; };
+
+  // start: always a white room
+  const startRoom = add('room', 0, 0, 0, -1, null, { room_type: 'white' });
+
+  // the first piece attached to the white room is ALWAYS a hall pointing east; the room's other exits stay closed
+  open.length = 0;
+  {
+    const [cx, cz, dx, dz] = DEFS.room.conns[0];            // the room's east opening
+    const j = 0, k = quarterTurn(DEFS.hall.conns[j][2], DEFS.hall.conns[j][3], [dx, dz]);
+    const [rx, rz] = rot(DEFS.hall.conns[j][0], DEFS.hall.conns[j][1], k);
+    add('hall', k, cx + dx * GAP - rx, cz + dz * GAP - rz, j, startRoom, { conn: { fails: 0 } });
+  }
+
+  // straightening: a piece is a dead end if none of its exits points forward and every sideways exit
+  // would run out of the allowed band within about one more corridor piece
+  function deadEnd(def, k, px, pz, used) {
+    return !def.conns.some(([cx, cz, dx, dz], i) => {
+      if (i === used) return false;
+      const [rx, rz] = rot(cx, cz, k), [rdx, rdz] = rot(dx, dz, k);
+      if (rdx * D[0] + rdz * D[1] > 0.5) return true;
+      const lat = side(px + rx, pz + rz), sw = rdx * D[1] * -1 + rdz * D[0];
+      return Math.abs(lat + sw * 65) <= band;
+    });
+  }
+
+  // grow the map by one piece (returns false if nothing could be placed this round)
+  function step() {
+    // choose a frontier connector: prefer ones far along the direction, pointing along it, and near the axis
+    const maxA = Math.max(...open.map(c => along(c.x, c.z)));
+    const tight = lerp(420, 90, S);                        // straighter = growth concentrates at the tip
+    const weights = open.map(c => {
+      const pro = Math.exp((along(c.x, c.z) - maxA) / tight);
+      const dot = c.dx * D[0] + c.dz * D[1];
+      const facing = 0.45 + 0.55 * Math.max(0, dot) + 0.25 * Math.abs(c.dx * D[1] - c.dz * D[0]) * 0.5;
+      const lat = side(c.x, c.z);
+      const sideward = (c.dx * D[1] * -1 + c.dz * D[0]);   // + = pointing further to the +side
+      const drift = (Math.abs(lat) > band * 0.6 && sideward * lat > 0) ? 0.05 : 1;
+      const aim = lerp(1, dot > 0 ? Math.max(0.03, dot * dot) : 0.02, S);   // straightening: openings that don't point forward are rarely used
+      const center = lerp(1, Math.exp(-Math.abs(lat) / 150), S);              // straightening: pull toward the main axis
+      return pro * facing * drift * aim * center * (c.fails ? 0.3 : 1) + 1e-6;
+    });
+    const ci = open.indexOf(pick(rng, open, weights));
+    const c = open[ci];
+
+    // candidate (type, own connector) combos in weighted random order
+    const combos = [];
+    for (const t of TYPES) {
+      const def = DEFS[t];
+      if (def.room && c.piece && DEFS[c.piece.type].room) continue;      // rooms never touch rooms
+      if (t === 'hall' && hallRun(c.piece) >= MAX_HALL_RUN) continue;    // no more than 2 halls connected in a row
+      def.conns.forEach(([, , dx, dz], j) => {
+        const k = quarterTurn(dx, dz, [c.dx, c.dz]);
+        if (k < 0) return;
+        // straightening: favour pieces whose remaining exits keep heading forward, avoid bends and forks
+        const exits = def.conns.filter((_, i) => i !== j).map(([, , ex, ez]) => { const [rdx, rdz] = rot(ex, ez, k); return rdx * D[0] + rdz * D[1]; });
+        const forward = lerp(1, 0.1 + 0.9 * Math.max(0, Math.max(...exits)), S);
+        const fork = exits.length >= 2 ? lerp(1, 0.25, S) : 1;
+        combos.push({ t, j, k, w: def.weight * (def.room && rng() < 0.1 ? 0.3 : 1) * forward * fork });
+      });
+    }
+    let success = false;
+    while (combos.length && !success) {
+      const idx = combos.indexOf(pick(rng, combos, combos.map(v => v.w)));
+      const { t, j, k } = combos.splice(idx, 1)[0];
+      const def = DEFS[t];
+      const [cx, cz] = def.conns[j];
+      const [rx, rz] = rot(cx, cz, k);
+      const px = c.x + c.dx * GAP - rx, pz = c.z + c.dz * GAP - rz;
+      if (Math.abs(side(px, pz)) > band || along(px, pz) < backLimit) continue;
+      if (S >= 0.5 && deadEnd(def, k, px, pz, j)) continue;
+      if (collides(worldRects(def, k, px, pz), c.piece)) continue;
+      open.splice(ci, 1);
+      add(t, k, px, pz, j, c.piece, { conn: c });
+      success = true;
+    }
+    if (!success) { c.fails++; if (c.fails >= 2) open.splice(ci, 1); }
+    return success;
+  }
+
+  function undoLast() {
+    if (placed.length <= 2) return false;                  // keep the start room and its fixed east hall
+    const p = placed.pop();
+    for (let i = open.length - 1; i >= 0; i--) if (open[i].piece === p) open.splice(i, 1);
+    p.fromConn.fails = 0; p.fromConn.used = false; open.push(p.fromConn);
+    return true;
+  }
+
+  // end: a red room at 1.5x size, attached to the best open connector (far along the path, near the axis)
+  function placeEnd(allowRoom = false) {
+    const cands = open.map((c, i) => ({ c, i }))
+      .filter(({ c }) => allowRoom || !DEFS[c.piece.type].room)           // rooms never touch rooms (unless nothing else is left)
+      .sort((p, q) => (along(q.c.x, q.c.z) - lerp(0.2, 1, S) * Math.abs(side(q.c.x, q.c.z))) -
+                      (along(p.c.x, p.c.z) - lerp(0.2, 1, S) * Math.abs(side(p.c.x, p.c.z))));
+    for (const { c, i } of cands) {
+      for (let j = 0; j < END_DEF.conns.length; j++) {
+        const [cx, cz, dx, dz] = END_DEF.conns[j];
+        const k = quarterTurn(dx, dz, [c.dx, c.dz]);
+        if (k < 0) continue;
+        const [rx, rz] = rot(cx, cz, k);
+        const px = c.x + c.dx * GAP - rx, pz = c.z + c.dz * GAP - rz;
+        if (along(px, pz) < -120 || collides(worldRects(END_DEF, k, px, pz), c.piece)) continue;   // (end room may sit a bit more sideways than the band)
+        open.splice(i, 1);
+        add('room', k, px, pz, j, c.piece, { def: END_DEF, scale: END_SCALE, room_type: 'red', conn: c });
+        return true;
+      }
+    }
+    return false;
+  }
+
+  let guard = 0;
+  while (placed.length < count - 1 && open.length && guard++ < 4000) step();
+  // if the end room does not fit yet, keep growing a little and retry
+  for (let tries = 0; !placeEnd() && tries < 300; tries++) { if (!open.length) break; step(); }
+  // still no room for it: back up piece by piece until the red room fits, so it is always there
+  while (placed[placed.length - 1].room_type !== 'red') {
+    if (placeEnd()) break;
+    if (!undoLast()) { placeEnd(true); break; }
+  }
+
+  // finishing touch: every t_shape / cross tip that ended up connected to nothing has a 30% chance of getting a room.
+  // (band / direction limits don't apply here, only the normal collision + start-clearance tests)
+  for (const piece of placed.slice()) {
+    if (piece.type !== 't_shape' && piece.type !== 'cross' && piece.type !== 'ele' && piece.type !== 'hall') continue;
+    for (const tip of piece.tips) {
+      if (tip.used || rng() >= TIP_ROOM_CHANCE) continue;
+      const def = DEFS.room;
+      for (let j = 0; j < def.conns.length; j++) {          // any of the room's 4 openings may face the tip
+        const k = quarterTurn(def.conns[j][2], def.conns[j][3], [tip.dx, tip.dz]);
+        if (k < 0) continue;
+        const [rx, rz] = rot(def.conns[j][0], def.conns[j][1], k);
+        const px = tip.x + tip.dx * GAP - rx, pz = tip.z + tip.dz * GAP - rz;
+        if (collides(worldRects(def, k, px, pz), piece)) continue;
+        add('room', k, px, pz, j, piece, { conn: tip });
+        break;
+      }
+    }
+  }
+  return placed;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Scene
+ * ------------------------------------------------------------------ */
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });   // transparent canvas so the CSS gradient shows through
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 1, 6000);
+
+/* ------------------------------------------------------------------ *
+ *  Fixed camera: the angle never changes, the view only slides east <-> west
+ * ------------------------------------------------------------------ */
+const START_POSITION = new THREE.Vector3(-238.95, 514.75, 571.14);
+const START_TARGET   = new THREE.Vector3(397.63, -222.87, -224.95);
+const camOffset  = START_POSITION.clone().sub(START_TARGET);   // constant: this is what locks the angle
+const viewTarget = START_TARGET.clone();
+let xMin = -Infinity, xMax = Infinity;
+
+/* Two views: the fixed angled view (viewT = 0) and a flat top-down view (viewT = 1).
+ * The camera is placed from spherical coordinates around a focus point, and every value is blended
+ * between the two views, so switching is one smooth glide (position AND rotation). */
+const ISO_AZ = Math.atan2(camOffset.x, camOffset.z);
+const ISO_POLAR = Math.acos(camOffset.y / camOffset.length());
+const ISO_DIST = camOffset.length();
+const TOP_POLAR = 0.001;          // ~straight down (exactly 0 would make the 'up' direction undefined)
+const VIEW_TIME = 1.1;            // seconds for the switch
+let topDist = 1000, topZ = 0;     // top view: camera height and the z the map is centred on (set in fitBounds)
+let viewT = 0, viewGoal = 0;      // blend progress (0 = angled, 1 = top) and where it is heading
+let curAz = ISO_AZ, curDist = ISO_DIST, curPolar = ISO_POLAR;
+const focus = new THREE.Vector3();
+const smoothstep = t => t * t * (3 - 2 * t);
+
+/* 'Hand type' pose: always the same place, whatever the view. The camera sits at the start position, turned 180 degrees
+ * (azimuth) away from the map and tilted slightly up, so only the background is visible. */
+const HAND_POSITION = START_POSITION.clone();
+const HAND_PITCH = THREE.MathUtils.degToRad(90);   // tilt up (+) / down (-); 90 = looking straight up
+const HAND_QUAT = (() => {
+  const hx = -camOffset.x, hz = -camOffset.z;   // horizontal direction of the angled view (START_TARGET - START_POSITION)
+  const len = Math.hypot(hx, hz);
+  const dir = new THREE.Vector3(-hx / len * Math.cos(HAND_PITCH), Math.sin(HAND_PITCH), -hz / len * Math.cos(HAND_PITCH));   // turned 180 degrees
+  const o = new THREE.Object3D(); o.position.copy(HAND_POSITION);
+  // looking (almost) straight up makes the default 'up' axis degenerate, so use the horizontal facing direction as screen-up instead
+  if (HAND_PITCH > THREE.MathUtils.degToRad(80)) o.up.set(-hx / len, 0, -hz / len);
+  o.lookAt(HAND_POSITION.clone().add(dir));
+  return o.quaternion.clone();
+})();
+let handT = 0, handGoal = 0;       // blend progress (0 = normal view, 1 = hand pose) and where it is heading
+const HAND_TIME = 1.3;             // seconds for the turn
+
+function applyView() {
+  viewTarget.x = Math.min(xMax, Math.max(xMin, viewTarget.x));
+  const e = smoothstep(viewT);
+  curAz = lerp(ISO_AZ, 0, e);                                   // top view: screen-right = +x (east), screen-up = -z
+  const polar = lerp(ISO_POLAR, TOP_POLAR, e);
+  curPolar = polar;
+  curDist = lerp(ISO_DIST, topDist, e);
+  // the angled view looks at a point below the ground; the top view looks at the ground point that sat under the screen centre
+  focus.set(viewTarget.x - FOCUS_OFF * e, lerp(START_TARGET.y, 0, e), lerp(START_TARGET.z, topZ, e));
+  camera.position.set(
+    focus.x + curDist * Math.sin(polar) * Math.sin(curAz),
+    focus.y + curDist * Math.cos(polar),
+    focus.z + curDist * Math.sin(polar) * Math.cos(curAz));
+  camera.lookAt(focus);
+  if (handT > 0) {                                              // blend toward the fixed hand pose (position + rotation)
+    const h = smoothstep(handT);
+    camera.position.lerp(HAND_POSITION, h);
+    camera.quaternion.slerp(HAND_QUAT, h);
+  }
+}
+function moveX(dx) { viewTarget.x += dx; applyView(); }
+function resetView() { vel = 0; goTo = null; viewTarget.copy(START_TARGET); applyView(); }
+
+const canvas = renderer.domElement;
+canvas.style.touchAction = 'none';
+// drag: slide along the world X axis only (works with mouse, pen and touch)
+let dragging = false, lastPx = 0;
+let vel = 0;              // camera speed along world X, units/second (inertia)
+let anim = null;          // build animation in progress (camera is locked to it while set)
+let goTo = null;          // world x the camera is gliding to (the 'Go to arrow' button); any manual move cancels it
+const FRICTION = 4;       // higher = stops sooner (try 2.5-6)
+let lastMoveT = 0;
+canvas.addEventListener('pointerdown', e => {
+  if (anim || handGoal) return;                       // camera is controlled by the build animation / hand pose
+  goTo = null;
+  dragging = true; vel = 0; lastPx = e.clientX; lastMoveT = performance.now();
+  canvas.setPointerCapture(e.pointerId); canvas.style.cursor = 'grabbing';
+});
+canvas.addEventListener('pointermove', e => {
+  if (!dragging) return;
+  const worldPerPx = 2 * curDist * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / innerHeight;
+  const rightX = Math.cos(curAz);   // how much world X shows up as screen-horizontal
+  const dx = -(e.clientX - lastPx) * worldPerPx / rightX;
+  moveX(dx);
+  lastPx = e.clientX;
+  const t = performance.now(), dt = (t - lastMoveT) / 1000; lastMoveT = t;
+  if (dt > 0) vel = vel * 0.6 + (dx / dt) * 0.4;      // smoothed release speed
+});
+const stopDrag = () => {
+  dragging = false; canvas.style.cursor = 'grab';
+  if (performance.now() - lastMoveT > 80) vel = 0;     // paused before letting go: no fling
+};
+canvas.addEventListener('pointerup', stopDrag); canvas.addEventListener('pointercancel', stopDrag);
+canvas.style.cursor = 'grab';
+// wheel / trackpad scroll
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  if (anim) return;
+  goTo = null;
+  const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+  vel += d * 0.9 * FRICTION;   // total glide distance ~ d * 0.9
+}, { passive: false });
+// keyboard: arrows or A / D
+const held = new Set();
+addEventListener('keydown', e => { if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return; const k = e.key.toLowerCase(); if (['arrowleft', 'arrowright', 'a', 'd'].includes(k)) held.add(k); });
+addEventListener('keyup', e => held.delete(e.key.toLowerCase()));
+addEventListener('blur', () => held.clear());
+
+// warm, sunlight-like lighting: cream-yellow sky fill, tan ground bounce, amber-orange sun
+const SKY_COLOR = 0xfff0d0, GROUND_COLOR = 0xc9a070, SUN_COLOR = 0xffc77a, HEMI_INTENSITY = 2.0, SUN_INTENSITY = 2.2;
+scene.add(new THREE.HemisphereLight(SKY_COLOR, GROUND_COLOR, HEMI_INTENSITY));
+const sun = new THREE.DirectionalLight(SUN_COLOR, SUN_INTENSITY);
+sun.position.set(300, 700, 200);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -900, right: 900, top: 900, bottom: -900, near: 10, far: 2000 });
+scene.add(sun);
+
+const mapGroup = new THREE.Group();
+scene.add(mapGroup);
+
+/* ------------------------------------------------------------------ *
+ *  Model loading (bake FBX transforms into geometry, sit on y = 0)
+ * ------------------------------------------------------------------ */
+const geometries = {}, outlineGeometries = {};
+
+/* Outline (inverted hull): a slightly inflated copy of each piece, drawn back-faces only in a dark color,
+ * so a thin line shows around every silhouette and wherever one piece passes in front of another. */
+const OUTLINE_COLOR = 0x161a2b;
+const OUTLINE_WIDTH = 3;   // world units (about 2-3 px at the default view); raise for a bolder line
+const outlineMaterial = new THREE.MeshBasicMaterial({ color: OUTLINE_COLOR, side: THREE.BackSide });
+function makeOutlineGeometry(g, width) {
+  const src = g.index ? g.toNonIndexed() : g;
+  const og = new THREE.BufferGeometry();
+  og.setAttribute('position', src.attributes.position.clone());
+  const hull = mergeVertices(og);   // weld coincident vertices so hard edges get one smooth push direction
+  hull.computeVertexNormals();
+  const pos = hull.attributes.position, nor = hull.attributes.normal;
+  for (let i = 0; i < pos.count; i++) pos.setXYZ(i, pos.getX(i) + nor.getX(i) * width, pos.getY(i) + nor.getY(i) * width, pos.getZ(i) + nor.getZ(i) * width);
+  hull.computeBoundingSphere();
+  return hull;
+}
+async function fetchModels() {
+  await Promise.all(TYPES.map(async t => {
+    const url = MODEL_DIR + t + '.fbx';
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(url + ' (HTTP ' + res.status + ')');
+    modelBuffers[t] = await res.arrayBuffer();
+  }));
+}
+function loadModels() {
+  const loader = new FBXLoader();
+  for (const t of TYPES) {
+    const root = loader.parse(modelBuffers[t], '');
+    root.updateMatrixWorld(true);
+    const geos = [];
+    root.traverse(o => { if (o.isMesh) { const g = o.geometry.clone(); g.applyMatrix4(o.matrixWorld); geos.push(g); } });
+    // merge all meshes of the file into one geometry
+    let g = geos.length === 1 ? geos[0] : mergeSimple(geos);
+    g.computeBoundingBox();
+    g.translate(0, -g.boundingBox.min.y, 0);   // floor of every block at y = 0
+    g = toCreasedNormals(g, CREASE_ANGLE);     // smooth the rounded bevels, keep hard edges crisp
+    geometries[t] = g;
+    outlineGeometries[t] = makeOutlineGeometry(g, OUTLINE_WIDTH);
+  }
+}
+const scaledOutlines = {};
+// scaled pieces get an outline built with a compensated width so the line keeps the same thickness
+function outlineFor(type, scale) {
+  if (scale === 1) return outlineGeometries[type];
+  const key = type + '@' + scale;
+  return scaledOutlines[key] || (scaledOutlines[key] = makeOutlineGeometry(geometries[type], OUTLINE_WIDTH / scale));
+}
+function mergeSimple(list) {
+  let n = 0; list.forEach(g => n += g.attributes.position.count);
+  const pos = new Float32Array(n * 3); let o = 0;
+  list.forEach(g => { pos.set(g.attributes.position.array, o); o += g.attributes.position.array.length; });
+  const m = new THREE.BufferGeometry(); m.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  return m;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Fixed colors
+ * ------------------------------------------------------------------ */
+const PIECE_COLORS = { t_shape: 0x2d8fb3, cross: 0x2d8fb3, hall: 0x7a67ad, ele: 0x8a72b8 };
+const ROOM_COLORS = { white: 0xf4f4f4, yellow: 0xe8c531, purple: 0x9a4fd0, red: 0xd9433b, green: 0x3aa84a, orange: 0xf08a24 };
+// Tone fitting: warm light multiplies every color by a yellow/orange tint, which drags blues toward green
+// and purples toward grey. Each base color is pre-compensated (same hue, adjusted tone) so it still reads
+// as the same color under the warm light. 0 = raw colors, 1 = cancel the warm cast completely.
+const WARM_FIT = 0.85;
+const lightTint = (() => {
+  const t = new THREE.Color(SKY_COLOR).multiplyScalar(HEMI_INTENSITY)
+    .add(new THREE.Color(SUN_COLOR).multiplyScalar(SUN_INTENSITY * 0.8));
+  return t.multiplyScalar(1 / Math.max(t.r, t.g, t.b));
+})();
+const luma = c => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+function fitToLight(hex) {
+  const c = new THREE.Color(hex);
+  const a = new THREE.Color(c.r / lightTint.r ** WARM_FIT, c.g / lightTint.g ** WARM_FIT, c.b / lightTint.b ** WARM_FIT);
+  a.multiplyScalar(luma(c) / luma(a));                 // keep the original brightness
+  const mx = Math.max(a.r, a.g, a.b);
+  return mx > 1 ? a.multiplyScalar(1 / mx) : a;
+}
+const mat = c => new THREE.MeshStandardMaterial({ color: fitToLight(c), roughness: 0.65, metalness: 0.05 });
+const materials = {}, roomMaterials = {};
+const iconMaterials = {}, iconShadowMaterials = {};   // filled by loadIcons()
+const badgeMaterials = {}, badgeRingMaterials = {};   // round badge behind each icon (angled view only), filled by loadIcons()
+let menuReady = false;                                   // true once the Customize menu exists
+
+/* ------------------------------------------------------------------ *
+ *  Location arrow (prototype): a chunky 3D arrow that floats above a random spot of the map and points in a
+ *  direction. Visible from both views (it lies flat, so the top view sees its shape and the angled view its volume).
+ *  Narrow pieces (halls...) get the arrow along their long axis; rooms get any direction.
+ * ------------------------------------------------------------------ */
+const ARROW_LENGTH = 64;      // world units, tip to tail
+const ARROW_FLOAT = 18;       // world units between the roof and the arrow's underside
+const ARROW_BOB = 3;          // world units of gentle up/down floating (0 = still)
+/* The arrow is drawn in the transparent pass AFTER the icons (renderOrder above theirs). The icons don't write depth,
+ * so the arrow always shows on top of an icon that stands in front of it, but rooms still hide it normally. */
+const ARROW_RENDER_ORDER = 10;
+const arrowMaterial = new THREE.MeshStandardMaterial({ roughness: 0.4, metalness: 0.1, transparent: true });
+const arrowOutlineMaterial = new THREE.MeshBasicMaterial({ color: OUTLINE_COLOR, side: THREE.BackSide, transparent: true });
+const arrowGeometry = (() => {
+  const L = ARROW_LENGTH, h = L / 2, sw = L * 0.115, hw = L * 0.37, neck = L * 0.07;      // shaft half-width, head half-width, head start
+  const shape = new THREE.Shape();                                  // drawn pointing +y
+  shape.moveTo(-sw, -h); shape.lineTo(sw, -h); shape.lineTo(sw, neck); shape.lineTo(hw, neck);
+  shape.lineTo(0, h); shape.lineTo(-hw, neck); shape.lineTo(-sw, neck); shape.closePath();
+  const depth = L * 0.13;
+  const g = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: true, bevelThickness: 1.2, bevelSize: 1, bevelSegments: 2, curveSegments: 1 });
+  g.translate(0, 0, -depth / 2);
+  g.rotateX(-Math.PI / 2);                                          // lie flat: points toward -z (screen-up in the top view), thickness up
+  g.computeBoundingBox(); g.translate(0, -g.boundingBox.min.y, 0);  // underside at y = 0
+  g.computeVertexNormals();
+  return g;
+})();
+const arrowOutlineGeometry = makeOutlineGeometry(arrowGeometry, 3.2);
+const ARROW_KEY = 'procedural_map_arrow_visible';
+let arrowEnabled = true;                    // toggled from the Customize menu
+try { if (localStorage.getItem(ARROW_KEY) === '0') arrowEnabled = false; } catch (_) {}
+function setArrowEnabled(on) {
+  arrowEnabled = on;
+  if (arrowBob) arrowBob.obj.visible = on;
+  try { localStorage.setItem(ARROW_KEY, on ? '1' : '0'); } catch (_) {}
+}
+let arrowSpot = null, arrowBob = null;      // arrowSpot: { piece, x, y, z, yaw } in the piece's local space
+
+const arrowRaycastMeshes = {};
+/* highest surface under a 3x3 grid of points of radius r around local (x, z); null if any point misses the model */
+function surfaceUnder(type, x, z, r) {
+  const g = geometries[type];
+  const mesh = arrowRaycastMeshes[type] || (arrowRaycastMeshes[type] = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })));
+  mesh.updateMatrixWorld(true);
+  g.computeBoundingBox();
+  const rc = new THREE.Raycaster(), from = g.boundingBox.max.y + 100, down = new THREE.Vector3(0, -1, 0);
+  let hi = -Infinity, lo = Infinity;
+  for (const dx of [-r, 0, r]) for (const dz of [-r, 0, r]) {
+    rc.set(new THREE.Vector3(x + dx, from, z + dz), down);
+    const hit = rc.intersectObject(mesh)[0];
+    if (!hit) return null;
+    hi = Math.max(hi, hit.point.y); lo = Math.min(lo, hit.point.y);
+  }
+  return { hi, flat: hi - lo };
+}
+function pickArrowSpot(pieces) {
+  const cand = pieces.filter(p => p.room_type !== 'white');          // anywhere except the start room
+  if (!cand.length) return null;
+  for (let attempt = 0; attempt < 120; attempt++) {
+    const r = ARROW_LENGTH * (attempt < 60 ? 0.4 : 0.28);               // the big arrow needs a roomy roof; later attempts accept a tighter fit
+    const piece = cand[Math.floor(Math.random() * cand.length)];
+    const rects = DEFS[piece.type].rects;
+    const [x0, z0, x1, z1] = rects[Math.floor(Math.random() * rects.length)];
+    const w = x1 - x0, d = z1 - z0, m = Math.min(r + 4, w / 2 - 1, d / 2 - 1);
+    if (m <= 0) continue;
+    const x = x0 + m + Math.random() * (w - 2 * m), z = z0 + m + Math.random() * (d - 2 * m);
+    const top = surfaceUnder(piece.type, x, z, Math.min(r, m));
+    if (!top || top.flat > 8) continue;                               // needs a flat roof under the whole arrow
+    let yaw;
+    if (Math.min(w, d) < 70) yaw = (d >= w ? 0 : Math.PI / 2) + (Math.random() < 0.5 ? 0 : Math.PI);   // along the long axis
+    else yaw = Math.random() * Math.PI * 2;                                                              // free direction
+    return { piece, x, y: top.hi, z, yaw };
+  }
+  return null;
+}
+function makeArrow(spot) {
+  const s = spot.piece.scale || 1;                                   // parent scale is inherited: undo it so the arrow keeps its size
+  const holder = new THREE.Group();
+  holder.position.set(spot.x, spot.y + ARROW_FLOAT / s, spot.z);
+  holder.rotation.y = spot.yaw;                                      // relative to the piece, so the piece's own rotation is inherited
+  holder.scale.setScalar(1 / s);
+  holder.visible = arrowEnabled;
+  const body = new THREE.Mesh(arrowGeometry, arrowMaterial);
+  body.castShadow = true;
+  const arrowOutline = new THREE.Mesh(arrowOutlineGeometry, arrowOutlineMaterial);
+  body.renderOrder = arrowOutline.renderOrder = ARROW_RENDER_ORDER;
+  holder.add(body, arrowOutline);
+  arrowBob = { obj: holder, baseY: holder.position.y, s };
+  return holder;
+}
+for (const t in PIECE_COLORS) materials[t] = mat(PIECE_COLORS[t]);
+for (const r in ROOM_COLORS) roomMaterials[r] = mat(ROOM_COLORS[r]);
+
+/* ------------------------------------------------------------------ *
+ *  Colour presets (switchable from the Customize menu)
+ *  pieces: hall / t_shape / cross / ele      rooms: white = start room
+ *  icons:  tint of the room icons per room type (omitted = white)
+ *  Colour-blind palettes: Okabe-Ito (Okabe & Ito 2008, popularised by Wong 2011) and Paul Tol's "bright" scheme.
+ * ------------------------------------------------------------------ */
+const solid = c => ({ t_shape: c, cross: c, hall: c, ele: c });
+const PRESETS = {
+  default: {
+    name: 'Default',
+    bg: ['#45a0d9', '#4db6d8'], arrow: 0xff2e93, pieces: PIECE_COLORS, rooms: ROOM_COLORS, outline: 0x161a2b,
+  },
+  okabe: {
+    name: 'Okabe-Ito',
+    bg: ['#45a0d9', '#4db6d8'], arrow: 0xffffff, pieces: solid(0x999999), outline: 0x161a2b,
+    rooms: { white: 0xf4f4f4, green: 0x009e73, yellow: 0xf0e442, orange: 0xe69f00, purple: 0xcc79a7, red: 0xd55e00 },
+  },
+  tol: {
+    name: 'Paul Tol',
+    bg: ['#45a0d9', '#4db6d8'], arrow: 0xffffff, pieces: solid(0xbbbbbb), outline: 0x161a2b,
+    rooms: { white: 0xf4f4f4, green: 0x228833, yellow: 0xccbb44, orange: 0x4477aa, purple: 0xaa3377, red: 0xee6677 },
+  },
+  contrast: {
+    name: 'High contrast',
+    bg: ['#070a14', '#121a33'], arrow: 0x00e5ff,
+    pieces: solid(0xb4c2e0), outline: 0x05070d,
+    rooms: { white: 0xffffff, green: 0x2bd96b, yellow: 0xffd60a, orange: 0xff8c1a, purple: 0xb57cff, red: 0xff3b4e },
+    icons: { green: 0x0a0e1a, yellow: 0x0a0e1a, orange: 0x0a0e1a, purple: 0x0a0e1a, red: 0x0a0e1a },
+    iconShadow: 0xffffff,
+  },
+};
+const PRESET_KEY = 'procedural_map_color_preset';
+let currentPreset = 'default';
+try { const saved = localStorage.getItem(PRESET_KEY); if (saved && PRESETS[saved]) currentPreset = saved; } catch (_) {}
+
+const ROOM_LABELS = { white: 'Start room', green: 'Safe room', yellow: 'Shop', orange: 'Puzzle', purple: 'Teacher room', red: 'Boss' };
+const LEGEND_ORDER = ['white', 'green', 'yellow', 'orange', 'purple', 'red'];
+const cssHex = hex => '#' + hex.toString(16).padStart(6, '0');
+const iconTint = type => (PRESETS[currentPreset].icons || {})[type] ?? 0xffffff;
+const iconShadowTint = () => PRESETS[currentPreset].iconShadow ?? 0x000000;
+/* Badge colours: the room's own hue, a bit more saturated, as a disc with the map's dark outline around it. White icons
+ * get a slightly deeper disc (so they stand out); dark icons (high-contrast preset) keep the bright room colour. */
+function updateBadgeColors() {
+  const pr = PRESETS[currentPreset];
+  for (const type in badgeMaterials) {
+    const t = new THREE.Color(iconTint(type)), hsl = {};
+    const iconIsLight = (t.r + t.g + t.b) / 3 > 0.5;
+    new THREE.Color(pr.rooms[type]).getHSL(hsl, THREE.SRGBColorSpace);        // work in sRGB so the hue/brightness match what you see
+    const sat = Math.min(1, hsl.s * 1.15 + 0.12);                             // more vibrant than the roof
+    const lig = iconIsLight ? Math.min(0.5, Math.max(0.3, hsl.l * 0.8)) : Math.min(0.7, hsl.l * 1.05);   // deeper for white icons, same for dark ones
+    badgeMaterials[type].color.setHSL(hsl.h, sat, lig, THREE.SRGBColorSpace);
+    badgeRingMaterials[type].color.set(pr.outline);
+  }
+}
+
+function buildLegend() {
+  const lg = document.getElementById('legend'), pr = PRESETS[currentPreset];
+  lg.innerHTML = '';
+  const row = (hex, label) => { const d = document.createElement('div'); d.innerHTML = `<i style="background:${cssHex(hex)}"></i>${label}`; lg.appendChild(d); };
+  row(pr.pieces.hall, 'Hall');
+  for (const r of LEGEND_ORDER) row(pr.rooms[r], ROOM_LABELS[r]);
+}
+function applyPreset(key) {
+  if (!PRESETS[key]) return;
+  currentPreset = key;
+  const pr = PRESETS[key];
+  for (const t in materials) materials[t].color.copy(fitToLight(pr.pieces[t]));
+  for (const r in roomMaterials) roomMaterials[r].color.copy(fitToLight(pr.rooms[r]));
+  outlineMaterial.color.set(pr.outline); arrowOutlineMaterial.color.set(pr.outline);
+  arrowMaterial.color.copy(fitToLight(pr.arrow)); arrowMaterial.emissive.copy(arrowMaterial.color).multiplyScalar(0.25);
+  for (const type in iconMaterials) { iconMaterials[type].color.set(iconTint(type)); iconShadowMaterials[type].color.set(iconShadowTint()); }
+  for (const el of [document.documentElement, document.body]) { el.style.setProperty('--bg-top', pr.bg[0]); el.style.setProperty('--bg-bottom', pr.bg[1]); }   // stage background   // icons may not be loaded yet: loadIcons() uses iconTint too
+  updateBadgeColors();
+  buildLegend();
+  if (menuReady) refreshPresetButtons();
+  try { localStorage.setItem(PRESET_KEY, key); } catch (_) {}
+}
+applyPreset(currentPreset);
+
+/* ------------------------------------------------------------------ *
+ *  Room icons: flat, unlit, always upright on screen, fading in with the top view (viewT)
+ * ------------------------------------------------------------------ */
+/* Real roof height of a room (local units): rays are shot straight down onto the room model, so rim / wall
+ * tops that stick out above the roof don't make things float. Takes the highest hit under the footprint. */
+let roofYCache = null;
+function roofY() {
+  if (roofYCache !== null) return roofYCache;
+  geometries.room.computeBoundingBox();
+  const bb = geometries.room.boundingBox;
+  const mesh = new THREE.Mesh(geometries.room, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
+  mesh.updateMatrixWorld(true);
+  const rc = new THREE.Raycaster(), half = (bb.max.x - bb.min.x) * 0.26;
+  let best = -Infinity;
+  for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) {
+    rc.set(new THREE.Vector3(i * half / 2, bb.max.y + 100, j * half / 2), new THREE.Vector3(0, -1, 0));
+    const hit = rc.intersectObject(mesh)[0];                                   // nearest = topmost surface
+    if (hit) best = Math.max(best, hit.point.y);
+  }
+  roofYCache = best > -Infinity ? best : bb.max.y;
+  console.log('Room roof height:', roofYCache.toFixed(2), '(bounding box top:', bb.max.y.toFixed(2) + ')');
+  return roofYCache;
+}
+const iconPlane = new THREE.PlaneGeometry(1, 1);
+const badgeDisc = new THREE.CircleGeometry(0.5, 48);
+function loadIcons() {
+  const texLoader = new THREE.TextureLoader();
+  for (const type in ICON_FILES) {
+    const url = iconUrls[type] || ICON_DIR + ICON_FILES[type];
+    const tex = texLoader.load(url, undefined, undefined, () => console.warn('Could not load icon ' + url));
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    const base = { map: tex, transparent: true, depthWrite: false, toneMapped: false,
+                   polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 };
+    iconMaterials[type] = new THREE.MeshBasicMaterial({ ...base, color: iconTint(type) });   // unlit: pure tint colour (white unless the preset says otherwise)
+    iconShadowMaterials[type] = new THREE.MeshBasicMaterial({ ...base, opacity: ICON_SHADOW, color: iconShadowTint() });
+    const flat = { transparent: true, depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 };
+    badgeMaterials[type] = new THREE.MeshBasicMaterial(flat);
+    badgeRingMaterials[type] = new THREE.MeshBasicMaterial(flat);
+  }
+  updateBadgeColors();
+}
+const iconRigs = [];       // one entry per icon on the map: { yaw, tilt, lift, size, k }
+function placeIcon(r, e) {
+  r.yaw.rotation.y = curAz - r.k * Math.PI / 2;            // face the camera's azimuth (minus the room's own rotation)
+  r.tilt.rotation.x = -(Math.PI / 2 - curPolar);           // lean back by the camera's elevation: faces the camera exactly, lies flat from above
+  // The icon always pivots around its BOTTOM edge, which never drops below the roof, so no part of it can sink into
+  // the room while the view changes. To end up centred in the top view, that pivot slides toward the camera by half
+  // the icon's height as it lies down (angled view: the bottom edge rests on the room centre, as before).
+  r.tilt.position.z = r.half * e;
+}
+function makeIcon(room) {
+  const mat = iconMaterials[room.room_type];
+  if (!mat) return null;                                                    // white start room: no icon
+  geometries.room.computeBoundingBox();
+  const bb = geometries.room.boundingBox;
+  const size = (bb.max.x - bb.min.x) * ICON_SIZE;                           // local units; the room's scale is inherited
+  const holder = new THREE.Group();
+  holder.position.set(0, roofY() + 1.5, 0);                                 // just above the roof (room for the drop shadow too)
+  const yaw = new THREE.Group(), tilt = new THREE.Group(), lift = new THREE.Group();
+  holder.add(yaw); yaw.add(tilt); tilt.add(lift);
+  const D = size * BADGE_SIZE + size * BADGE_RING * 2 || size;               // overall height of icon + badge + outline
+  lift.position.y = D / 2;                                                  // the badge's bottom edge is the pivot, so it never sinks into the roof
+  const shadow = new THREE.Mesh(iconPlane, iconShadowMaterials[room.room_type]);
+  shadow.scale.set(size, size, 1);
+  shadow.position.set(size * 0.025, -size * 0.025, -0.3);                   // drop shadow: slightly right and down, just behind the icon
+  shadow.renderOrder = 3;
+  const icon = new THREE.Mesh(iconPlane, mat);
+  icon.scale.set(size, size, 1);
+  icon.renderOrder = 4;
+  lift.add(shadow, icon);
+  if (BADGE_SIZE > 0) {
+    const ring = new THREE.Mesh(badgeDisc, badgeRingMaterials[room.room_type]);
+    ring.scale.set(D, D, 1); ring.position.z = -0.9; ring.renderOrder = 1;
+    const disc = new THREE.Mesh(badgeDisc, badgeMaterials[room.room_type]);
+    disc.scale.set(D - size * BADGE_RING * 2, D - size * BADGE_RING * 2, 1); disc.position.z = -0.6; disc.renderOrder = 2;
+    lift.add(ring, disc);
+  }
+  const rig = { yaw, tilt, lift, size, half: D / 2, k: room.k };
+  iconRigs.push(rig); placeIcon(rig, smoothstep(viewT));
+  return holder;
+}
+function updateIcons() {
+  const e = smoothstep(viewT);                                              // 0 in the angled view -> 1 in the top view
+  for (const r of iconRigs) placeIcon(r, e);
+  for (const t in badgeMaterials) badgeMaterials[t].opacity = badgeRingMaterials[t].opacity = 1 - e;   // the badge melts away as the view turns to top-down
+}
+
+/* ------------------------------------------------------------------ *
+ *  Build / rebuild the map
+ * ------------------------------------------------------------------ */
+let lastPieces = [];     // the structure currently shown (kept so it can be replayed exactly)
+
+function makeMesh(p) {
+  const m = new THREE.Mesh(geometries[p.type], p.room_type ? roomMaterials[p.room_type] : materials[p.type]);
+  if (p.room_type) m.userData.room_type = p.room_type;
+  m.position.set(p.x, 0, p.z);
+  m.rotation.y = p.k * Math.PI / 2;
+  m.scale.setScalar(p.scale || 1);
+  m.castShadow = m.receiveShadow = true;
+  const outline = new THREE.Mesh(outlineFor(p.type, p.scale || 1), outlineMaterial);   // child: follows the piece's position/rotation
+  m.add(outline);
+  if (p.room_type) { const icon = makeIcon(p); if (icon) m.add(icon); }
+  if (arrowSpot && arrowSpot.piece === p) m.add(makeArrow(arrowSpot));   // location arrow (prototype)
+  return m;
+}
+// allowed travel: the length of the map (plus a little margin), always including the start view
+function fitBounds() {
+  const box = new THREE.Box3().setFromObject(mapGroup);
+  xMin = Math.min(box.min.x - 150, START_TARGET.x);
+  xMax = Math.max(box.max.x + 150, START_TARGET.x);
+  // top view: centre on the map's width and pull back far enough to fit all of it (the east-west extent scrolls)
+  topZ = (box.min.z + box.max.z) / 2;
+  const halfH = (box.max.z - box.min.z) / 2 + 120;
+  topDist = Math.max(900, halfH / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
+}
+
+function build() {
+  const seed = 1;
+  const count = 40;
+  const angle = 0;   // the map always grows east
+  const straight = 60 / 100;
+  const pieces = generate(seed, count, angle, straight);
+  lastPieces = pieces;
+  arrowSpot = pickArrowSpot(pieces);                     // new random arrow spot for every generated map (a replay keeps it)
+  anim = null;                                           // cancels a running animation
+  mapGroup.clear(); iconRigs.length = 0;
+  for (const p of pieces) mapGroup.add(makeMesh(p));
+  fitBounds();
+  resetView();
+  console.log(`Generated ${pieces.length} pieces`, pieces.reduce((o, p) => (o[p.type] = (o[p.type] || 0) + 1, o), {}));
+}
+
+/* ------------------------------------------------------------------ *
+ *  Build animation: wipe the map and rebuild the SAME structure piece by piece.
+ *  Pieces closest to the origin come first; each one pops in slightly above its
+ *  spot and drops smoothly into place while the camera follows the growing frontier.
+ * ------------------------------------------------------------------ */
+const ANIM = {
+  fallHeight: 70,      // how far above its spot a piece appears
+  fallTime: 0.8,       // seconds for one piece to land
+  speed: 500,          // world units per second the build front travels east (total time = map length / speed)
+  startDelay: 0.3,
+  camSpeed: 3,         // camera follow smoothing (higher = camera hugs the front tighter; lag = speed / camSpeed)
+};
+// the view centre is a point below the ground; this is how far east of the ground point under the screen centre it sits
+const FOCUS_OFF = (() => {
+  const d = START_TARGET.clone().sub(START_POSITION);
+  return START_TARGET.x - (START_POSITION.x + d.x * (START_POSITION.y / -d.y));
+})();
+const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
+
+function replay() {
+  if (!lastPieces.length) return;
+  mapGroup.clear(); iconRigs.length = 0;
+  const items = lastPieces.map(p => { const m = makeMesh(p); mapGroup.add(m); return { p, m, key: Math.hypot(p.x, p.z), t0: 0 }; });
+  fitBounds();                                           // same travel limits as the finished map
+  // one clock drives everything: a "front" moves out from the origin at constant speed and each piece
+  // drops when the front reaches its distance from the origin (so near pieces first, camera in sync)
+  let kMax = 0;
+  for (const it of items) { it.t0 = ANIM.startDelay + it.key / ANIM.speed; it.m.visible = false; kMax = Math.max(kMax, it.key); }
+  dragging = false; vel = 0;
+  resetView();
+  anim = { t: 0, items, kMax };
+}
+
+function updateAnim(dt) {
+  anim.t += dt;
+  let done = true;
+  for (const it of anim.items) {
+    const u = (anim.t - it.t0) / ANIM.fallTime;
+    if (u < 0) { done = false; continue; }
+    it.m.visible = true;
+    it.m.position.y = (1 - easeOutCubic(Math.min(1, u))) * ANIM.fallHeight;
+    if (u < 1) done = false;
+  }
+  // camera: follows the front, which moves at constant speed, so the camera speed is constant too.
+  // The exponential smoothing only softens the start (and the moment it leaves the starting view).
+  const front = Math.min(anim.kMax, Math.max(0, anim.t - ANIM.startDelay) * ANIM.speed);
+  const want = Math.max(START_TARGET.x, front + FOCUS_OFF);
+  viewTarget.x += (want - viewTarget.x) * (1 - Math.exp(-ANIM.camSpeed * dt));
+  applyView();
+  if (done) {                                            // hand control back, carrying the camera's speed into the normal glide
+    for (const it of anim.items) it.m.position.y = 0;
+    vel = (want - viewTarget.x) * ANIM.camSpeed;
+    anim = null;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ *  UI + loop
+ * ------------------------------------------------------------------ */
+const $ = id => document.getElementById(id);
+/* Customize menu */
+const customMenu = $('customMenu'), customBtn = $('customBtn');
+const presetList = $('presetList');
+for (const key in PRESETS) {
+  const pr = PRESETS[key], b = document.createElement('button');
+  b.className = 'preset'; b.dataset.key = key;
+  const sw = [pr.pieces.hall, ...LEGEND_ORDER.map(r => pr.rooms[r])].map(h => `<i style="background:${cssHex(h)}"></i>`).join('');
+  b.innerHTML = `<b>${pr.name}</b><div class="swatches">${sw}</div>`;
+  b.onclick = e => { applyPreset(key); e.currentTarget.blur(); };
+  presetList.appendChild(b);
+}
+function refreshPresetButtons() {
+  for (const b of presetList.children) { const on = b.dataset.key === currentPreset; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on); }
+}
+menuReady = true; refreshPresetButtons();
+const arrowToggle = $('arrowToggle');
+arrowToggle.checked = arrowEnabled;
+arrowToggle.onchange = e => { setArrowEnabled(e.currentTarget.checked); e.currentTarget.blur(); };   // blur: keep the V / H / K hotkeys working
+function setMenu(open) { customMenu.hidden = !open; customBtn.setAttribute('aria-expanded', open); }
+customBtn.onclick = e => { setMenu(customMenu.hidden); e.currentTarget.blur(); };
+$('menuClose').onclick = e => { setMenu(false); e.currentTarget.blur(); };
+addEventListener('keydown', e => { if (e.key === 'Escape' && !customMenu.hidden) setMenu(false); });
+const switchView = () => { if (handGoal) return; viewGoal = viewGoal ? 0 : 1; };
+/* Hand type: toggles between the fixed background-only pose and the view we were in. While active, 'Switch view' is disabled. */
+const handBtn = $('handBtn');
+const HAND_FILES = { hand1: 'hand1.png', hand2: 'hand2.png', hand3: 'hand3.png', hand_contrast: 'hand_contrast.png' };
+const HAND_LABELS = { hand1: 'Hand 1', hand2: 'Hand 2', hand3: 'Hand 3', hand_contrast: 'Hand (high contrast)' };
+const handUrls = {};       // filled by the manual file picker when needed
+let chosenHand = null;
+const handPanel = $('handPanel');
+function buildHandPanel() {
+  const box = $('handChoices'); box.innerHTML = '';
+  for (const key in HAND_FILES) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'handChoice'; b.dataset.hand = key;
+    b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', 'false');
+    b.setAttribute('aria-label', HAND_LABELS[key]); b.title = HAND_LABELS[key];
+    const img = document.createElement('img'); img.alt = ''; img.draggable = false;
+    img.src = handUrls[key] || ICON_DIR + HAND_FILES[key];
+    img.onerror = () => console.warn('Could not load hand image ' + img.src);
+    b.append(img);
+    b.onclick = e => { chooseHand(key); e.currentTarget.blur(); };
+    box.append(b);
+  }
+}
+function chooseHand(key) {   // only one hand can be chosen at a time
+  chosenHand = key;
+  for (const b of document.querySelectorAll('.handChoice')) b.setAttribute('aria-checked', b.dataset.hand === key);
+}
+function updateHandPanel() {   // visible only once the camera has finished turning into the hand pose
+  const show = handGoal === 1 && handT >= 1;
+  if (handPanel.classList.contains('show') !== show) { handPanel.classList.toggle('show', show); handPanel.setAttribute('aria-hidden', !show); }
+}
+function toggleHand() {
+  handGoal = handGoal ? 0 : 1;
+  if (handGoal) { vel = 0; goTo = null; }
+  handBtn.setAttribute('aria-pressed', !!handGoal);
+  $('viewBtn').disabled = !!handGoal;
+}
+handBtn.onclick = e => { toggleHand(); e.currentTarget.blur(); };
+/* Go to arrow: the camera only ever slides east-west, so find the x that puts the arrow in the middle of the screen
+ * (for the view we are in or heading to) and glide there. */
+function arrowViewX() {
+  if (!arrowBob) return null;
+  mapGroup.updateMatrixWorld(true);
+  const p = arrowBob.obj.getWorldPosition(new THREE.Vector3());
+  const x0 = viewTarget.x, t0 = viewT;
+  viewT = viewGoal;                                        // solve for the view we will be in
+  const ndcX = x => { viewTarget.x = x; applyView(); camera.updateMatrixWorld(true); return p.clone().project(camera).x; };
+  let x = x0;
+  for (let i = 0; i < 10; i++) {                           // secant iterations: screen-x is almost linear in the camera's x
+    const f = ndcX(x);
+    if (Math.abs(f) < 1e-4) break;
+    const slope = (ndcX(x + 10) - f) / 10;
+    if (!slope) break;
+    x -= f / slope;
+  }
+  x = Math.min(xMax, Math.max(xMin, x));
+  viewT = t0; viewTarget.x = x0; applyView();
+  return x;
+}
+function goToArrow() {
+  if (anim || handGoal) return;
+  if (!arrowBob || !arrowEnabled) { toast(arrowBob ? 'The arrow is hidden (Customize menu)' : 'There is no arrow on this map'); return; }
+  const x = arrowViewX();
+  if (x === null) return;
+  vel = 0; goTo = x;
+}
+$('arrowBtn').onclick = e => { goToArrow(); e.currentTarget.blur(); };
+addEventListener('keydown', e => {
+  if (e.key.toLowerCase() !== 'g' || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
+  goToArrow();
+});
+$('viewBtn').onclick = e => { switchView(); e.currentTarget.blur(); };
+addEventListener('keydown', e => {
+  if (e.key.toLowerCase() !== 'v' || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
+  switchView();
+});
+/* H: show / hide all UI */
+addEventListener('keydown', e => {
+  if (e.key.toLowerCase() !== 'h' || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+  if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
+  document.body.classList.toggle('ui-hidden');
+  if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+});
+/* K: copy the current view angle to the clipboard */
+let toastTimer;
+function toast(text) { const el = $('toast'); el.textContent = text; el.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 1800); }
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; }
+  catch (e) {
+    const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    let ok = false; try { ok = document.execCommand('copy'); } catch (_) {}
+    ta.remove(); return ok;
+  }
+}
+addEventListener('keydown', async e => {
+  if (e.key.toLowerCase() !== 'k' || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
+  const deg = r => +(r * 180 / Math.PI).toFixed(2), r2 = v => +v.toFixed(2);
+  const off = camera.position.clone().sub(focus), polar = Math.acos(off.y / off.length());
+  const view = {
+    azimuth: deg(Math.atan2(off.x, off.z)),        // rotation around the vertical axis (0 = looking from +Z)
+    polar: deg(polar),                                 // angle from straight above (0 = top-down, 90 = horizon)
+    elevation: deg(Math.PI / 2 - polar),               // angle above the ground
+    distance: r2(off.length()),
+    position: camera.position.toArray().map(r2),
+    target: focus.toArray().map(r2),
+  };
+  const ok = await copyText(JSON.stringify(view));
+  toast(ok ? `Copied: azimuth ${view.azimuth}°, elevation ${view.elevation}°` : 'Could not access the clipboard');
+});
+addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+
+async function start() {
+  try {
+    try {
+      await fetchModels();
+    } catch (e) {
+      // Browsers block fetch() on file:// pages, so offer a manual file picker as a fallback.
+      console.warn(e);
+      await pickModels(e);
+    }
+    loadModels(); loadIcons(); buildHandPanel(); build(); $('msg').remove();
+  } catch (e) { $('msg').textContent = 'Could not load models: ' + e.message; console.error(e); }
+}
+// Fallback: let the user select the .fbx files by hand (works when opened directly from disk).
+function pickModels(cause) {
+  return new Promise((resolve, reject) => {
+    const msg = $('msg');
+    msg.style.pointerEvents = 'auto';
+    msg.innerHTML = '';
+    const box = document.createElement('div');
+    box.style.cssText = 'max-width:420px;padding:16px;border-radius:8px;background:rgba(14,26,48,.85);text-align:center;line-height:1.5';
+    box.innerHTML = '<div>Could not fetch the models automatically<br><small style="opacity:.7">(' + cause.message + ')</small></div>' +
+      '<div style="margin:8px 0">Select all needed files: <b>' + TYPES.map(t => t + '.fbx').join(', ') + '</b><br><small style="opacity:.7">(and the icons: ' + Object.values(ICON_FILES).concat(Object.values(HAND_FILES)).join(', ') + ')</small></div>';
+    const input = document.createElement('input');
+    input.type = 'file'; input.accept = '.fbx,.png'; input.multiple = true;
+    input.onchange = async () => {
+      try {
+        for (const f of input.files) {
+          const iconType = Object.keys(ICON_FILES).find(k => ICON_FILES[k] === f.name.toLowerCase());
+          if (iconType) { iconUrls[iconType] = URL.createObjectURL(f); continue; }   // icon picked by hand
+          const handKey = Object.keys(HAND_FILES).find(k => HAND_FILES[k] === f.name.toLowerCase());
+          if (handKey) { handUrls[handKey] = URL.createObjectURL(f); continue; }      // hand image picked by hand
+          const t = f.name.replace(/\.fbx$/i, '').toLowerCase();
+          if (TYPES.includes(t)) modelBuffers[t] = await f.arrayBuffer();
+        }
+        const missing = TYPES.filter(t => !modelBuffers[t]);
+        if (missing.length) { note.textContent = 'Still missing: ' + missing.map(t => t + '.fbx').join(', '); return; }
+        msg.style.pointerEvents = 'none'; msg.textContent = 'Loading models…';
+        resolve();
+      } catch (e) { reject(e); }
+    };
+    const note = document.createElement('div'); note.style.cssText = 'margin-top:8px;color:#ffb4a8';
+    box.append(input, note); msg.append(box);
+  });
+}
+start();
+
+let lastT = performance.now();
+renderer.setAnimationLoop(now => {
+  const dt = Math.min(0.05, (now - lastT) / 1000); lastT = now;
+  if (anim) updateAnim(dt);                          // build animation drives the pieces AND the camera
+  if (viewT !== viewGoal) {                          // glide between the angled and the top-down view
+    const step = dt / VIEW_TIME;
+    viewT = viewGoal > viewT ? Math.min(viewGoal, viewT + step) : Math.max(viewGoal, viewT - step);
+    applyView();
+  }
+  if (handT !== handGoal) {                          // glide into / out of the hand pose
+    const step = dt / HAND_TIME;
+    handT = handGoal > handT ? Math.min(handGoal, handT + step) : Math.max(handGoal, handT - step);
+    applyView();
+  }
+  updateIcons();
+  updateHandPanel();
+  if (arrowBob && ARROW_BOB) arrowBob.obj.position.y = arrowBob.baseY + Math.sin(now / 450) * ARROW_BOB / arrowBob.s;   // gentle floating
+  const dir = (anim || handGoal) ? 0 : (held.has('arrowright') || held.has('d') ? 1 : 0) - (held.has('arrowleft') || held.has('a') ? 1 : 0);
+  if (dir) { vel = dir * 700; goTo = null; }         // keys: constant speed while held
+  if (goTo !== null && !anim && !dragging && !handGoal) {         // 'Go to arrow': ease toward the target x
+    const d = goTo - viewTarget.x;
+    if (Math.abs(d) < 0.5) { viewTarget.x = goTo; goTo = null; }
+    else viewTarget.x += d * (1 - Math.exp(-5 * dt));
+    vel = 0; applyView();
+  }
+  if (!dragging && !anim && !handGoal) {
+    if (vel) moveX(vel * dt);
+    if (!dir) vel *= Math.exp(-FRICTION * dt);       // frame-rate-independent decay
+    if (Math.abs(vel) < 1 || viewTarget.x <= xMin || viewTarget.x >= xMax) vel = 0;
+  }
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>
